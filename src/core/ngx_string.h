@@ -12,9 +12,13 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 
-
+/* 
+    1. 通过长度来表示字符串长度，减少计算字符串长度的次数
+    2. 以重复引用一段字符串内存，data可以指向任意内存，
+    长度表示结束，而不用去copy一份自己的字符串
+ */
 typedef struct {
-    size_t      len;
+    size_t      len;    /* 字符串的长度有len决定，不再是'\0'决定 */
     u_char     *data;
 } ngx_str_t;
 
@@ -36,17 +40,37 @@ typedef struct {
     u_char     *data;
 } ngx_variable_value_t;
 
+/*  ngx_string与ngx_null_string是“{，}”格式的，故只能用于赋值时初始化
+    ngx_str_t str = ngx_string("hello world");
+    ngx_str_t str1 = ngx_null_string;
+*/
 
+/* 通过一个以’\0’结尾的普通字符串str构造一个nginx的字符串，
+鉴于其中采用sizeof操作符计算字符串长度，因此参数必须是一个常量字符串 */
 #define ngx_string(str)     { sizeof(str) - 1, (u_char *) str }
+/* 定义变量时，使用ngx_null_string初始化字符串为空字符串，符串的长度为0，data为NULL。 */
 #define ngx_null_string     { 0, NULL }
+
+/*
+1. gx_string与ngx_str_set在调用时，传进去的字符串一定是常量字符串，否则会得到意想不到的错误
+  (因为ngx_str_set内部使用了sizeof()，如果传入的是u_char*，那么计算的是这个指针的长度，而不是字符串的长度)
+2. ngx_str_set与ngx_str_null实际上是两行语句，故在if/for/while等语句中单独使用需要用花括号括起来
+*/
+
+/* ngx_str_set用于设置字符串str为text，由于使用sizeof计算长度，故text必须为常量字符串。 */
 #define ngx_str_set(str, text)                                               \
     (str)->len = sizeof(text) - 1; (str)->data = (u_char *) text
+/* ngx_str_null用于设置字符串str为空串，长度为0，data为NULL。 */
 #define ngx_str_null(str)   (str)->len = 0; (str)->data = NULL
 
 
 #define ngx_tolower(c)      (u_char) ((c >= 'A' && c <= 'Z') ? (c | 0x20) : c)
 #define ngx_toupper(c)      (u_char) ((c >= 'a' && c <= 'z') ? (c & ~0x20) : c)
 
+/* 将src的前n个字符转换成小写存放在dst字符串当中，调用者需要保证dst指向的空间大于等于n，
+且指向的空间必须可写。操作不会对原字符串产生变动。
+如要更改原字符串，ngx_strlow(str->data, str->data, str->len);
+ */
 void ngx_strlow(u_char *dst, u_char *src, size_t n);
 
 
