@@ -211,7 +211,7 @@ main(int argc, char *const *argv)
     if (ngx_strerror_init() != NGX_OK) {
         return 1;
     }
-
+    /* 解析外部参数 */
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
@@ -300,11 +300,11 @@ main(int argc, char *const *argv)
     if (init_cycle.pool == NULL) {
         return 1;
     }
-
+    /* 保存Nginx命令行中的参数和变量,放到全局变量ngx_argv */
     if (ngx_save_argv(&init_cycle, argc, argv) != NGX_OK) {
         return 1;
     }
-
+    /* 将ngx_get_options中获得这些参数取值赋值到ngx_cycle中。prefix, conf_prefix, conf_file, conf_param等字段。 */
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -320,7 +320,9 @@ main(int argc, char *const *argv)
     if (ngx_crc32_table_init() != NGX_OK) {
         return 1;
     }
-
+    /* 初始化socket端口监听，例如打开80端口监听；
+     * Nginx支持热切换，为了保证切换之后的套接字不丢失，
+     * 所以需要采用这一步添加继承的Socket套接字，套接字会放在NGINX的全局环境变量中*/
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -348,7 +350,7 @@ main(int argc, char *const *argv)
 
         return 0;
     }
-
+    /* 处理信号；例如./nginx -s stop,则处理Nginx的停止信号 */
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -382,7 +384,7 @@ main(int argc, char *const *argv)
     }
 
 #endif
-
+    /* 创建pid文件 */
     if (ngx_create_pidfile(&ccf->pid, cycle->log) != NGX_OK) {
         return 1;
     }
@@ -415,7 +417,12 @@ main(int argc, char *const *argv)
     return 0;
 }
 
-
+/**
+ * Nginx支持热切换，为了保证切换之后的套接字不丢失，所以需要采用这一步添加继承的Socket套接字，套接字会放在NGINX的全局环境变量中
+ * 初始化继承的sockets
+ * 函数通过环境变量NGINX完成socket的继承，继承来的socket将会放到init_cycle的listening数组中。
+ * 在NGINX环境变量中，每个socket中间用冒号或分号隔开。完成继承同时设置全局变量ngx_inherited为1。
+ */
 static ngx_int_t
 ngx_add_inherited_sockets(ngx_cycle_t *cycle)
 {
@@ -432,6 +439,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "using inherited sockets from \"%s\"", inherited);
 
+    /* 初始化ngx_cycle.listening数组，并且数组中包含10个元素 */
     if (ngx_array_init(&cycle->listening, cycle->pool, 10,
                        sizeof(ngx_listening_t))
         != NGX_OK)
@@ -663,6 +671,10 @@ ngx_exec_new_binary(ngx_cycle_t *cycle, char *const *argv)
 }
 
 
+/**
+ * 解析启动命令行中的参数
+ * ./nginx -s stop|start|restart
+ */
 static ngx_int_t
 ngx_get_options(int argc, char *const *argv)
 {

@@ -9,11 +9,17 @@
 #include <ngx_core.h>
 
 
+/**
+ * 初始化一个数组
+ * p:内存池容器
+ * n：支持多少个数组元素
+ * size:每个元素的大小
+ */
 ngx_array_t *
 ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
 {
     ngx_array_t *a;
-
+    /* 在内存池pool上面分配一段内存给ngx_array数据结构 */
     a = ngx_palloc(p, sizeof(ngx_array_t));
     if (a == NULL) {
         return NULL;
@@ -32,7 +38,10 @@ ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
     return a;
 }
 
-
+/**
+ * 数组销毁
+ * 数组销毁设计的也挺讲究的，会去帮助清除内存池上的内存
+ */
 void
 ngx_array_destroy(ngx_array_t *a)
 {
@@ -40,16 +49,26 @@ ngx_array_destroy(ngx_array_t *a)
 
     p = a->pool;
 
+    /**
+     * 如果数组元素的末尾地址和内存池pool的可用开始的地址相同
+     * 则将内存池pool->d.last移动到数组元素的开始地址，相当于清除当前数组的内容
+     */
     if ((u_char *) a->elts + a->size * a->nalloc == p->d.last) {
         p->d.last -= a->size * a->nalloc;
     }
 
+    /**
+     * 如果数组的数据结构ngx_array_t的末尾地址和内存池pool的可用开始地址相同
+     * 则将内存池pool->d.last移动到数组元素的开始地址，相当于清除当前数组的内容
+     */
     if ((u_char *) a + sizeof(ngx_array_t) == p->d.last) {
         p->d.last = (u_char *) a;
     }
 }
 
-
+/**
+ * 添加一个元素
+ */
 void *
 ngx_array_push(ngx_array_t *a)
 {
@@ -57,6 +76,7 @@ ngx_array_push(ngx_array_t *a)
     size_t       size;
     ngx_pool_t  *p;
 
+    /* 如果数组中元素都用完了 ，则需要对数组进行扩容 */
     if (a->nelts == a->nalloc) {
 
         /* the array is full */
@@ -65,6 +85,13 @@ ngx_array_push(ngx_array_t *a)
 
         p = a->pool;
 
+        /**
+         * 扩容有两种方式
+         * 1.如果数组元素的末尾和内存池pool的可用开始的地址相同，
+         * 并且内存池剩余的空间支持数组扩容，则在当前内存池上扩容
+         * 2. 如果扩容的大小超出了当前内存池剩余的容量或者数组元素的末尾和内存池pool的可用开始的地址不相同，
+         * 则需要重新分配一个新的内存块存储数组，并且将原数组拷贝到新的地址上
+         */
         if ((u_char *) a->elts + size == p->d.last
             && p->d.last + a->size <= p->d.end)
         {
@@ -96,7 +123,7 @@ ngx_array_push(ngx_array_t *a)
     return elt;
 }
 
-
+/* 添加多个元素 */
 void *
 ngx_array_push_n(ngx_array_t *a, ngx_uint_t n)
 {

@@ -79,7 +79,9 @@ static ngx_cycle_t      ngx_exit_cycle;
 static ngx_log_t        ngx_exit_log;
 static ngx_open_file_t  ngx_exit_log_file;
 
-
+/**
+ * Nginx的多进程运行模式
+ */
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
 {
@@ -95,6 +97,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     ngx_listening_t   *ls;
     ngx_core_conf_t   *ccf;
 
+    /* 设置能接收到的信号 */
     sigemptyset(&set);
     sigaddset(&set, SIGCHLD);
     sigaddset(&set, SIGALRM);
@@ -120,7 +123,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     for (i = 0; i < ngx_argc; i++) {
         size += ngx_strlen(ngx_argv[i]) + 1;
     }
-
+    /* 保存进程标题 */
     title = ngx_pnalloc(cycle->pool, size);
 
     p = ngx_cpymem(title, master_process, sizeof(master_process) - 1);
@@ -131,9 +134,9 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
     ngx_setproctitle(title);
 
-
+    /* 获取核心配置 ngx_core_conf_t */
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-
+    /* 启动工作进程 - 多进程启动的核心函数 */
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
     ngx_start_cache_manager_processes(cycle, 0);
@@ -142,8 +145,11 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     delay = 0;
     sigio = 0;
     live = 1;
-
+    /* 主线程循环 */
     for ( ;; ) {
+
+        /* delay用来设置等待worker推出的时间，master接受了退出信号后，
+		 * 首先发送退出信号给worker，而worker退出需要一些时间*/
         if (delay) {
             if (ngx_sigalrm) {
                 sigio = 0;
@@ -166,14 +172,14 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
-
+        /* 等待信号的到来，阻塞函数 */
         sigsuspend(&set);
 
         ngx_time_update();
 
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                        "wake up, sigio %i", sigio);
-
+        /* 收到了SIGCHLD信号，有worker退出(ngx_reap == 1) */
         if (ngx_reap) {
             ngx_reap = 0;
             ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "reap children");
@@ -184,7 +190,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
         if (!live && (ngx_terminate || ngx_quit)) {
             ngx_master_process_exit(cycle);
         }
-
+        /* 中止进程  */
         if (ngx_terminate) {
             if (delay == 0) {
                 delay = 50;
@@ -206,7 +212,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             continue;
         }
-
+        /* 退出进程 */
         if (ngx_quit) {
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
@@ -223,7 +229,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             continue;
         }
-
+        /* 收到SIGHUP信号 重新初始化配置 */
         if (ngx_reconfigure) {
             ngx_reconfigure = 0;
 
@@ -247,6 +253,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_cycle = cycle;
             ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx,
                                                    ngx_core_module);
+            
+            /**
+             * 创建工作进程
+             */
             ngx_start_worker_processes(cycle, ccf->worker_processes,
                                        NGX_PROCESS_JUST_RESPAWN);
             ngx_start_cache_manager_processes(cycle, 1);
@@ -254,6 +264,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
         }
+        /* 当ngx_noaccepting==1时，会把ngx_restart设为1，重启worker  */
 
         if (ngx_restart) {
             ngx_restart = 0;
@@ -262,7 +273,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_start_cache_manager_processes(cycle, 0);
             live = 1;
         }
-
+        /* 收到SIGUSR1信号，重新打开log文件 */
         if (ngx_reopen) {
             ngx_reopen = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "reopening logs");
@@ -270,13 +281,13 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_REOPEN_SIGNAL));
         }
-
+        /* SIGUSER2，热代码替换 */
         if (ngx_change_binary) {
             ngx_change_binary = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "changing binary");
             ngx_new_binary = ngx_exec_new_binary(cycle, ngx_argv);
         }
-
+        /* 收到SIGWINCH信号不在接受请求，worker退出，master不退出 */
         if (ngx_noaccept) {
             ngx_noaccept = 0;
             ngx_noaccepting = 1;
@@ -344,6 +355,9 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
 }
 
 
+/**
+ * 创建工作进程
+ */
 static void
 ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 {
@@ -353,11 +367,11 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start worker processes");
 
     ch.command = NGX_CMD_OPEN_CHANNEL;
-
+    /* 循环创建工作进程  默认ccf->worker_processes=8个进程，根据CPU个数决定 */
     for (i = 0; i < n; i++) {
 
         cpu_affinity = ngx_get_cpu_affinity(i);
-
+        /* 打开工作进程  （ngx_worker_process_cycle 回调函数，主要用于处理每个工作线程）*/
         ngx_spawn_process(cycle, ngx_worker_process_cycle, NULL,
                           "worker process", type);
 

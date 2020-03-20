@@ -14,22 +14,25 @@
 
 
 typedef struct ngx_queue_s  ngx_queue_t;
-
+/**
+ * 链表的数据结构非常简单，ngx_queue_s会挂载到实体
+ * 结构上。然后通过ngx_queue_s来做成链表
+ */
 struct ngx_queue_s {
-    ngx_queue_t  *prev;
-    ngx_queue_t  *next;
+    ngx_queue_t  *prev;     /* 前 */
+    ngx_queue_t  *next;     /* 后 */
 };
 
-
+/* 初始化一个链表 */
 #define ngx_queue_init(q)                                                     \
     (q)->prev = q;                                                            \
     (q)->next = q
 
-
+/* 判断链表是否为空 */
 #define ngx_queue_empty(h)                                                    \
     (h == (h)->prev)
 
-
+/* 头插法 */
 #define ngx_queue_insert_head(h, x)                                           \
     (x)->next = (h)->next;                                                    \
     (x)->next->prev = x;                                                      \
@@ -39,18 +42,18 @@ struct ngx_queue_s {
 
 #define ngx_queue_insert_after   ngx_queue_insert_head
 
-
+/* 尾插法 */
 #define ngx_queue_insert_tail(h, x)                                           \
     (x)->prev = (h)->prev;                                                    \
     (x)->prev->next = x;                                                      \
     (x)->next = h;                                                            \
     (h)->prev = x
 
-
+/* h是尾部，链表的第一个元素 */
 #define ngx_queue_head(h)                                                     \
     (h)->next
 
-
+/*  h 是头，h 的上一个就是尾 */
 #define ngx_queue_last(h)                                                     \
     (h)->prev
 
@@ -58,7 +61,7 @@ struct ngx_queue_s {
 #define ngx_queue_sentinel(h)                                                 \
     (h)
 
-
+/*  返回节点Q的下一个元素 */
 #define ngx_queue_next(q)                                                     \
     (q)->next
 
@@ -68,7 +71,7 @@ struct ngx_queue_s {
 
 
 #if (NGX_DEBUG)
-
+/* 移除某一个节点 */
 #define ngx_queue_remove(x)                                                   \
     (x)->next->prev = (x)->prev;                                              \
     (x)->prev->next = (x)->next;                                              \
@@ -76,14 +79,14 @@ struct ngx_queue_s {
     (x)->next = NULL
 
 #else
-
+/*  */
 #define ngx_queue_remove(x)                                                   \
     (x)->next->prev = (x)->prev;                                              \
     (x)->prev->next = (x)->next
 
 #endif
 
-
+/* 分割一个链表 */
 #define ngx_queue_split(h, q, n)                                              \
     (n)->prev = (h)->prev;                                                    \
     (n)->prev->next = n;                                                      \
@@ -92,7 +95,7 @@ struct ngx_queue_s {
     (h)->prev->next = h;                                                      \
     (q)->prev = n;
 
-
+/*  */
 #define ngx_queue_add(h, n)                                                   \
     (h)->prev->next = (n)->next;                                              \
     (n)->next->prev = (h)->prev;                                              \
@@ -100,6 +103,15 @@ struct ngx_queue_s {
     (h)->prev->next = h;
 
 
+/**
+ * 通过链表可以找到结构体所在的指针
+ * typedef struct {
+ * 		ngx_queue_s queue;
+ * 		char * x;
+ * 		....
+ * } TYPE
+ * 例如：ngx_queue_data(&type->queue, TYPE, queue)
+ */
 #define ngx_queue_data(q, type, link)                                         \
     (type *) ((u_char *) q - offsetof(type, link))
 
