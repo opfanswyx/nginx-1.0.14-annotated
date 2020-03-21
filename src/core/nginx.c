@@ -411,6 +411,7 @@ main(int argc, char *const *argv)
         ngx_single_process_cycle(cycle);
 
     } else {
+        /* 多进程模式运行 */
         ngx_master_process_cycle(cycle);
     }
 

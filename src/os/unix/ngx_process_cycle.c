@@ -728,7 +728,10 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-
+/**
+ * 子进程 回调函数
+ * 每个进程的逻辑处理就从这个方法开始
+ */
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
@@ -736,7 +739,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     ngx_connection_t  *c;
 
     ngx_process = NGX_PROCESS_WORKER;
-
+    /* 工作进程初始化 */
     ngx_worker_process_init(cycle, 1);
 
     ngx_setproctitle("worker process");
@@ -786,9 +789,9 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     }
     }
 #endif
-
+    /* 进程循环 */
     for ( ;; ) {
-
+        /* 判断是否是退出的状态，如果退出，则需要清空socket连接句柄 */
         if (ngx_exiting) {
 
             c = cycle->connections;
@@ -812,7 +815,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
         }
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
-
+        /* 事件驱动核心函数 */
         ngx_process_events_and_timers(cycle);
 
         if (ngx_terminate) {
@@ -820,7 +823,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 
             ngx_worker_process_exit(cycle);
         }
-
+        /* 如果是退出 */
         if (ngx_quit) {
             ngx_quit = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
@@ -832,7 +835,7 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
                 ngx_exiting = 1;
             }
         }
-
+        /* 如果是重启 */
         if (ngx_reopen) {
             ngx_reopen = 0;
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "reopening logs");
@@ -841,7 +844,9 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
     }
 }
 
-
+/**
+ * 工作进程初始化
+ */
 static void
 ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
 {
@@ -851,12 +856,12 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
     struct rlimit     rlmt;
     ngx_core_conf_t  *ccf;
     ngx_listening_t  *ls;
-
+    /* 配置环境变量 */
     if (ngx_set_environment(cycle, NULL) == NULL) {
         /* fatal */
         exit(2);
     }
-
+    /* 获取核心配置 */
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
     if (priority && ccf->priority != 0) {
@@ -900,7 +905,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
         }
     }
 #endif
-
+    /* 设置UID GROUPUID */
     if (geteuid() == 0) {
         if (setgid(ccf->group) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
@@ -950,7 +955,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
     }
 
 #endif
-
+    /* 切换工作目录 */
     if (ccf->working_directory.len) {
         if (chdir((char *) ccf->working_directory.data) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -961,7 +966,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
     }
 
     sigemptyset(&set);
-
+    /* 清除所有信号 */
     if (sigprocmask(SIG_SETMASK, &set, NULL) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
@@ -971,11 +976,12 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
      * disable deleting previous events for the listening sockets because
      * in the worker processes there are no events at all at this point
      */
+    /* 清除sokcet的监听 */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
         ls[i].previous = NULL;
     }
-
+    /* 对模块初始化  */
     for (i = 0; ngx_modules[i]; i++) {
         if (ngx_modules[i]->init_process) {
             if (ngx_modules[i]->init_process(cycle) == NGX_ERROR) {
@@ -984,7 +990,9 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
             }
         }
     }
-
+    /**
+	 *将其他进程的channel[1]关闭，自己的channel[0]关闭
+	 */
     for (n = 0; n < ngx_last_process; n++) {
 
         if (ngx_processes[n].pid == -1) {
@@ -1013,7 +1021,9 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_uint_t priority)
 #if 0
     ngx_last_process = 0;
 #endif
-
+    /**
+	 * 给ngx_channel注册一个读事件处理函数
+	 */
     if (ngx_add_channel_event(cycle, ngx_channel, NGX_READ_EVENT,
                               ngx_channel_handler)
         == NGX_ERROR)
